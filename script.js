@@ -1,10 +1,27 @@
 // Initialize the scene, camera, and renderer
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(window.innerWidth, window.innerHeight);
+
+
+//const renderer = new THREE.WebGLRenderer({ antialias: true });
+//renderer.setSize(window.innerWidth, window.innerHeight);
+//document.getElementById('container').appendChild(renderer.domElement);
+
+
+// Factor by which to increase the canvas size
+const scaleFactor = 2;
+
+// Create the renderer at a higher resolution
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setSize(window.innerWidth * scaleFactor, window.innerHeight * scaleFactor);
+
+// Scale down the canvas element to fit the display size
+renderer.domElement.style.width = `${window.innerWidth}px`;
+renderer.domElement.style.height = `${window.innerHeight}px`;
 document.getElementById('container').appendChild(renderer.domElement);
 
+
+///////////////
 // Create a sphere
 const geometry = new THREE.SphereGeometry(1, 32, 32);
 const material = new THREE.MeshBasicMaterial({ color: 0x0088ff, wireframe: true });
@@ -14,7 +31,7 @@ scene.add(sphere);
 // Add coordinates as points
 const pointMaterial = new THREE.PointsMaterial({ color: 0xff0000, size: 0.05 });
 const pointsGeometry = new THREE.BufferGeometry();
-const positions = [0, 0, 0]; // Initialize with a single point at the origin
+const positions = [0, 0, 0]; 
 pointsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 const points = new THREE.Points(pointsGeometry, pointMaterial);
 scene.add(points);
@@ -41,6 +58,18 @@ let previousMousePosition = { x: 0, y: 0 };
 document.addEventListener('mousedown', e => { 
   isDragging = true; 
   previousMousePosition = { x: e.clientX, y: e.clientY };
+
+  // Handle the click to place a point
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects([sphere]);
+  if(intersects.length > 0) {
+    const point = intersects[0].point;
+    const matrixInv = new THREE.Matrix4().copy(sphere.matrixWorld).invert();
+		point.applyMatrix4(matrixInv);
+    pointsGeometry.setAttribute('position', new THREE.Float32BufferAttribute([point.x, point.y, point.z], 3));
+    pointsGeometry.attributes.position.needsUpdate = true;  
+    coordDiv.innerHTML = `Coordinates: <br>Point: (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})`;
+  }
 });
 
 document.addEventListener('mouseup', () => { isDragging = false; });
@@ -54,7 +83,7 @@ document.addEventListener('mousemove', e => {
 
   if (intersects.length > 0) {
     const { x, y, z } = intersects[0].point;
-    coordDiv.innerHTML = `Coordinates: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`;
+    coordDiv.innerHTML = `Coordinates: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})` + coordDiv.innerHTML.substr(coordDiv.innerHTML.indexOf('<br>'));
   }
 
   if (isDragging) {
@@ -62,12 +91,10 @@ document.addEventListener('mousemove', e => {
       x: e.clientX - previousMousePosition.x,
       y: e.clientY - previousMousePosition.y
     };
-
     sphere.rotation.y += deltaMove.x * 0.005;
     sphere.rotation.x += deltaMove.y * 0.005;
     points.rotation.y += deltaMove.x * 0.005;
     points.rotation.x += deltaMove.y * 0.005;
-
     previousMousePosition = { x: e.clientX, y: e.clientY };
   }
 });
