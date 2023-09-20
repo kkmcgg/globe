@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WMS on Sphere</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="webglCanvas" width="512" height="512"></canvas>
+    <script>
+    
+
+        const canvas = document.getElementById('webglCanvas');
+        const gl = canvas.getContext('webgl');
+        
+            let mouseX = 256; // assuming canvas width is 512
+let mouseY = 256; // assuming canvas height is 512
+
+canvas.addEventListener('mousemove', (event) => {
+    mouseX = event.offsetX;
+    mouseY = event.offsetY;
+});
+
+        // Vertex Shader
+        const vsSource = `
+            attribute vec2 aVertexPosition;
+            attribute vec2 aTextureCoord;
+            varying vec2 vTextureCoord;
+            void main(void) {
+                gl_Position = vec4(aVertexPosition, 0.0, 1.0);
+                vTextureCoord = aTextureCoord;
+            }
+        `;
+
+        // Fragment Shader
+const fsSource = `
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uSampler;
+    uniform vec2 iMouse;
+    
+    float sinh(float val) {
+    return (exp(val) - exp(-val)) * 0.5;
+}
+
+    void main(void) {
+        vec2 p = vTextureCoord * 2.0 - 1.0;
+
+        // If the point is outside the circle (sphere in 3D), discard it.
+        if (dot(p, p) > 1.0) {
+            discard;
+        }
+
+        vec3 spherePos = normalize(vec3(p.x, p.y, sqrt(1.0 - dot(p, p))));
+        
+        // Rotate around Y axis using mouse
+        float angleY = 3.14 * (iMouse.x / 512.0 - 0.5); // assuming canvas width is 512
+        spherePos = mat3(cos(angleY), 0, sin(angleY), 0, 1, 0, -sin(angleY), 0, cos(angleY)) * spherePos;
+
+        // Rotate around X axis using mouse
+        float angleX = 3.14 * (iMouse.y / 512.0 - 0.5); // assuming canvas height is 512
+        spherePos = mat3(1, 0, 0, 0, cos(angleX), -sin(angleX), 0, sin(angleX), cos(angleX)) * spherePos;
+
+        // Adjust for oblate spheroid shape
+        spherePos.z *= 0.7;
+
+
+				//africa too big!
+        //float lon = atan(spherePos.x, spherePos.y) / 3.14;
+        //float lat = asin(spherePos.z / 0.7) / 3.14;
+        
+//float lon = atan(spherePos.x, spherePos.y) / (2.0 * 3.14);
+//float lat = (asin(spherePos.z / 0.7) + 3.14/2.0) / 3.14;
+
+float lon = atan(spherePos.x, spherePos.y) / (2.0 * 3.14);
+float lat = asin(spherePos.z);
+float y = log(tan(3.14/4.0 + lat/2.0));
+
+// Clipping values for typical Mercator bounds
+float yMin = log(tan(3.14/4.0 - 3.14/4.0*0.995));
+float yMax = log(tan(3.14/4.0 + 3.14/4.0*0.995));
+
+// Map to [0, 1]
+float v = (y - yMin) / (yMax - yMin);
+
+        vec2 uv = vec2(lon * 0.5 + 0.5, lat * 0.5 + 0.5);
+        gl_FragColor = texture2D(uSampler, uv);
+    }
+`;
+
+
+
+       function compileShader(source, type) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error(`An error occurred compiling the shaders: ${gl.getShaderInfoLog(shader)}`);
+        gl.deleteShader(shader);
+        return null;
+    }
+    return shader;
+}
+
+const vertexShader = compileShader(vsSource, gl.VERTEX_SHADER);
+const fragmentShader = compileShader(fsSource, gl.FRAGMENT_SHADER);
+
+const shaderProgram = gl.createProgram();
+gl.attachShader(shaderProgram, vertexShader);
+gl.attachShader(shaderProgram, fragmentShader);
+gl.linkProgram(shaderProgram);
+
+if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    console.error(`Unable to initialize the shader program: ${gl.getProgramInfoLog(shaderProgram)}`);
+}
+
+const vertexPosition = gl.getAttribLocation(shaderProgram, 'aVertexPosition');
+const textureCoord = gl.getAttribLocation(shaderProgram, 'aTextureCoord');
+
+// Define vertices for a quad (two triangles)
+const vertices = new Float32Array([
+    1.0,  1.0,
+   -1.0,  1.0,
+    1.0, -1.0,
+   -1.0, -1.0,
+]);
+
+const textureCoordinates = new Float32Array([
+    1.0,  1.0,
+    0.0,  1.0,
+    1.0,  0.0,
+    0.0,  0.0,
+]);
+
+const vertexBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+const textureCoordBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, textureCoordBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, textureCoordinates, gl.STATIC_DRAW);
+
+function drawScene(texture) {
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    gl.vertexAttribPointer(vertexPosition, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(vertexPosition);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, textureCoordBuffer);
+    gl.vertexAttribPointer(textureCoord, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(textureCoord);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.uniform1i(gl.getUniformLocation(shaderProgram, 'uSampler'), 0);
+
+    // Update the mouse uniform before the draw call
+    const mouseLocation = gl.getUniformLocation(shaderProgram, 'iMouse');
+    gl.uniform2f(mouseLocation, mouseX, mouseY);
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    
+        // Request another frame
+    requestAnimationFrame(() => drawScene(texture));
+}
+function loadTexture(url, callback) {
+    const texture = gl.createTexture();
+    const image = new Image();
+
+    image.crossOrigin = "anonymous";  // Request CORS headers
+
+    image.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        callback(texture);
+    };
+
+    image.src = url;
+}
+
+
+        const wmsUrl = "https://basemap.nationalmap.gov/arcgis/services/USGSImageryOnly/MapServer/WMSServer?request=GetMap&service=WMS&version=1.1.1&layers=0&styles=&format=image/jpeg&srs=EPSG:4326&bbox=-180,-90,180,90&width=1024&height=512";
+
+        loadTexture(wmsUrl, function(texture) {
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            gl.useProgram(shaderProgram);
+
+            drawScene(texture);
+        });
+
+    </script>
+</body>
+</html>
