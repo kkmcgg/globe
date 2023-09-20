@@ -253,4 +253,8 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 }
 ```
 
+# Cool Things
+
+https://github.com/ebeaufay/UltraGlobe
+
 
