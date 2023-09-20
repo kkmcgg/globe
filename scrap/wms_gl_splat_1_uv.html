@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WMS to WebGL Shader</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script>
+    const canvas = document.getElementById('canvas');
+    const gl = canvas.getContext('webgl');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+
+    // Handling window resizing
+    window.addEventListener('resize', function() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        render();
+    });
+
+    const vertexShaderSource = `
+        attribute vec2 position;
+        varying vec2 uv;
+        void main() {
+            uv = position * 0.5 + 0.5;
+            gl_Position = vec4(position, 0.0, 1.0);
+        }
+    `;
+
+    // Fragment Shader with extensive comments
+    const fragmentShaderSource = `
+        precision mediump float;
+        varying vec2 uv;
+        uniform sampler2D texture;
+        uniform float u_tileX;
+        uniform float u_tileY;
+        uniform float u_zoom;
+
+         void main() {
+            // Convert tile X and zoom into longitude
+            float lon = u_tileX / pow(2.0, u_zoom) * 360.0 - 180.0;
+        
+            // Convert tile Y and zoom into latitude using a custom function to replace sinh
+            // sinh is not available in all GLSL versions, so we compute it manually
+            float innerValue = 1.0 - 2.0 * u_tileY / pow(2.0, u_zoom);
+            float ex = exp(innerValue);
+            float eNegx = 1.0 / ex;
+            float sinhValue = (ex - eNegx) * 0.5;
+            float latRad = atan(sinhValue);
+            float lat = latRad * 180.0 / 3.14159265359;
+        
+            // Calculate deltas for longitude and latitude
+            float deltaLon = 360.0 / pow(2.0, u_zoom) / 256.0;
+            float deltaLat = 2.0 * latRad / 256.0;
+        
+            // Convert UV coordinates into pixel longitude and latitude
+            float pixelLon = lon + uv.x * deltaLon * 256.0;
+            float pixelLat = lat - uv.y * deltaLat * 256.0;
+        
+            // Convert the longitude and latitude into a 3D position
+            vec3 position = vec3(pixelLon / 180.0, pixelLat / 90.0, 0.0);
+        
+            // Convert the 3D position into a color for visualization
+            vec3 color = position * 0.5 + 0.5;
+        
+            gl_FragColor = vec4(color, 1.0);
+        }
+      `;
+      const fragmentShaderSource_scrap = `
+vec3 gaussian(vec2 pos) {
+    float sigma = 0.1;
+    vec2 center = vec2(0.0, 0.0);
+    float dist = length(pos - center);
+    float factor = exp(-(dist * dist) / (2.0 * sigma * sigma));
+    return vec3(factor, factor, factor);
+}
+
+vec3 gradient(vec2 pos) {
+    vec2 center = vec2(0.5, 0.5);  // Center of the screen
+    float dist = length(pos - center);
+    return vec3(1.0 - dist, 1.0 - dist, 1.0 - dist);
+}
+
+void main() {
+    float lon = 90.0;  // Hard-coded value
+    float colorValue = (lon + 180.0) / 360.0;
+    gl_FragColor = vec4(colorValue, 0.0, 0.0, 1.0);
+}
+
+
+        
+    `;
+
+const fragmentShaderSource_test = `
+precision mediump float;
+varying vec2 uv;
+uniform sampler2D texture;
+uniform float u_tileX;
+uniform float u_tileY;
+uniform float u_zoom;
+
+void main() {
+    // Convert tile X and zoom into longitude
+    float lon = u_tileX / pow(2.0, u_zoom) * 360.0 - 180.0;
+
+    // Convert tile Y and zoom into latitude using the sinh replacement
+    float innerValue = 1.0 - 2.0 * u_tileY / pow(2.0, u_zoom);
+    float ex = exp(innerValue);
+    float eNegx = 1.0 / ex;
+    float sinhValue = (ex - eNegx) * 0.5;
+    float latRad = atan(sinhValue);
+
+    // Calculate deltas for longitude and latitude
+    float deltaLon = 360.0 / pow(2.0, u_zoom) / 256.0;
+    float deltaLat = 2.0 * latRad / 256.0;
+
+    // Convert UV coordinates into pixel longitude and latitude
+    float pixelLon = lon + uv.x * deltaLon * 256.0;
+    float pixelLat = latRad - uv.y * deltaLat * 256.0;
+
+    // Convert pixelLon and pixelLat into 3D position on a sphere
+    float radius = 1.0;
+    float x = radius * cos(pixelLat) * cos(pixelLon);
+    float y = radius * cos(pixelLat) * sin(pixelLon);
+    float z = radius * sin(pixelLat);
+
+    // Color based on the z value for a sense of depth
+    vec3 color = vec3(0.5 + 0.5 * z, 0.5 + 0.5 * z, 0.5 + 0.5 * z);
+
+    gl_FragColor = vec4(color, 1.0);
+}
+
+
+`;
+
+
+const fragmentShaderSource_CLOSE = `
+precision mediump float;
+varying vec2 uv;
+uniform sampler2D texture;
+uniform float u_tileX;
+uniform float u_tileY;
+uniform float u_zoom;
+
+void main() {
+    // Convert tile X and zoom into longitude in degrees
+    float lon = u_tileX / pow(2.0, u_zoom) * 360.0 - 180.0;
+
+    // Convert tile Y and zoom into latitude using the sinh replacement, in degrees
+    float innerValue = 1.0 - 2.0 * u_tileY / pow(2.0, u_zoom);
+    float ex = exp(innerValue);
+    float eNegx = 1.0 / ex;
+    float sinhValue = (ex - eNegx) * 0.5;
+    float latRad = atan(sinhValue);
+    float lat = latRad * 180.0 / 3.14159265359;
+
+    // Convert UV coordinates into pixel longitude and latitude in degrees
+    float pixelLon = lon + uv.x * 360.0 / pow(2.0, u_zoom);
+    float pixelLat = lat + uv.y * 170.1022 / pow(2.0, u_zoom);  // Max lat in Mercator is about 85.0511
+
+    // Convert pixelLon and pixelLat into 3D position on a sphere
+    float radius = 1.0;
+    float lonRad = pixelLon * 3.14159265359 / 180.0;
+    float latRad2 = pixelLat * 3.14159265359 / 180.0;
+    float x = radius * cos(latRad2) * cos(lonRad);
+    float y = radius * cos(latRad2) * sin(lonRad);
+    float z = radius * sin(latRad2);
+
+    // Perspective projection
+    float focalLength = 2.5; 
+    vec2 perspectiveUV = vec2(x / (z + focalLength), y / (z + focalLength));
+
+    // Fetch the color from the texture using the perspective-projected UV coordinates
+    vec3 color = texture2D(texture, perspectiveUV).rgb;
+
+    gl_FragColor = vec4(color, 1.0);
+}
+
+`;
+
+const fragmentShaderSource_CLOSERMAYBE = `
+precision mediump float;
+varying vec2 uv;
+uniform sampler2D texture;
+uniform float u_tileX;
+uniform float u_tileY;
+uniform float u_zoom;
+
+void main() {
+    // Convert tile X and zoom into longitude in degrees
+    float lon = u_tileX / pow(2.0, u_zoom) * 360.0 - 180.0;
+
+    // Convert tile Y and zoom into latitude using the sinh replacement, in degrees
+    float innerValue = 1.0 - 2.0 * u_tileY / pow(2.0, u_zoom);
+    float ex = exp(innerValue);
+    float eNegx = 1.0 / ex;
+    float sinhValue = (ex - eNegx) * 0.5;
+    float latRad = atan(sinhValue);
+    float lat = latRad * 180.0 / 3.14159265359;
+
+    // Convert UV coordinates into pixel longitude and latitude in degrees
+    float pixelLon = lon + uv.x * 360.0 / pow(2.0, u_zoom);
+    float pixelLat = lat + uv.y * 170.1022 / pow(2.0, u_zoom);
+
+    // Convert pixelLon and pixelLat into 3D position on a sphere
+    float radius = 2.0;  // Increased radius
+    float lonRad = pixelLon * 3.14159265359 / 180.0;
+    float latRad2 = pixelLat * 3.14159265359 / 180.0;
+    float x = radius * cos(latRad2) * cos(lonRad);
+    float y = radius * cos(latRad2) * sin(lonRad);
+    float z = radius * sin(latRad2);
+
+    // Perspective projection with adjusted focal length
+    float focalLength = 4.0;  // Adjusted focal length
+    vec2 perspectiveUV = vec2(0.5 + x / (z + focalLength), 0.5 + y / (z + focalLength));
+
+    // Fetch the color from the texture using the perspective-projected UV coordinates
+    vec3 color = texture2D(texture, perspectiveUV).rgb;
+
+    gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+const fragmentShaderSource_AGH = `
+precision mediump float;
+varying vec2 uv;
+uniform sampler2D texture;
+uniform float u_tileX;
+uniform float u_tileY;
+uniform float u_zoom;
+
+void main() {
+    // Convert tile X and zoom into longitude
+    float lon = u_tileX / pow(2.0, u_zoom) * 360.0 - 180.0;
+    lon = lon * 3.14159265359 / 180.0; // Convert to radians
+
+    // Convert tile Y and zoom into latitude using a custom function to replace sinh
+    float innerValue = 1.0 - 2.0 * u_tileY / pow(2.0, u_zoom);
+    float ex = exp(innerValue);
+    float eNegx = 1.0 / ex;
+    float sinhValue = (ex - eNegx) * 0.5;
+    float lat = atan(sinhValue);
+
+    // Convert UV coordinates into pixel longitude and latitude
+    float pixelLon = lon + uv.x * 2.0 * 3.14159265359;
+    float pixelLat = lat + uv.y * 3.14159265359;
+
+    // Convert lat-lon to 3D spherical coordinates
+    float radius = 1.0;
+    float x = radius * cos(pixelLat) * cos(pixelLon);
+    float y = radius * cos(pixelLat) * sin(pixelLon);
+    float z = radius * sin(pixelLat);
+
+    // Perspective projection
+    vec2 perspectiveUV;
+    perspectiveUV.x = x / (z + 1.5);
+    perspectiveUV.y = y / (z + 1.5);
+
+    // Fetch the color from the texture using the UV coordinates
+    vec3 color = texture2D(texture, uv).rgb;
+
+    // Set the fragment color
+    gl_FragColor = vec4(color, 1.0);
+}
+
+
+
+`;
+
+    const vertexShaderSource_2 = `
+    attribute vec2 position;  // The original coordinates of the pixel in the slippy map
+varying vec2 uv;
+uniform float u_tileX;
+uniform float u_tileY;
+uniform float u_zoom;
+
+void main() {
+    uv = position * 0.5 + 0.5;
+
+    // Convert tile X and zoom into longitude
+    float lon = u_tileX / pow(2.0, u_zoom) * 360.0 - 180.0;
+    lon = lon * 3.14159265359 / 180.0; // Convert to radians
+
+    // Convert tile Y and zoom into latitude using a custom function to replace sinh
+    float innerValue = 1.0 - 2.0 * u_tileY / pow(2.0, u_zoom);
+    float ex = exp(innerValue);
+    float eNegx = 1.0 / ex;
+    float sinhValue = (ex - eNegx) * 0.5;
+    float lat = atan(sinhValue);
+
+    // Convert UV coordinates into pixel longitude and latitude
+    float pixelLon = lon + uv.x * 2.0 * 3.14159265359;
+    float pixelLat = lat + uv.y * 3.14159265359;
+
+    // Convert lat-lon to 3D spherical coordinates
+    float radius = 1.0;
+    float x = radius * cos(pixelLat) * cos(pixelLon);
+    float y = radius * cos(pixelLat) * sin(pixelLon);
+    float z = radius * sin(pixelLat);
+
+    // Return the transformed coordinates
+    gl_Position = vec4(x, y, z, 1.0);
+}
+
+    `;
+    
+ const fragmentShaderSource_2 = `
+precision mediump float;
+varying vec2 vUV;
+uniform sampler2D texture;
+
+void main() {
+    gl_FragColor = texture2D(texture, vUV);
+}
+`;
+
+const vertexShaderSource_BOO = `
+attribute vec2 position;
+varying vec2 uv;
+uniform vec3 latLong;
+
+void main() {
+    uv = position * 0.5 + 0.5;
+    
+    float lon = latLong.x * 360.0 - 180.0;
+    float lat = latLong.y * 180.0 - 90.0;
+    
+    // Convert lat-long to spherical coordinates
+    float radius = 1.0;
+    float x = radius * cos(lat) * cos(lon);
+    float y = radius * cos(lat) * sin(lon);
+    float z = radius * sin(lat);
+    
+    gl_Position = vec4(x, y, z, 1.0);
+}
+
+`;
+
+const fragmentShaderSource_BOO = `
+precision mediump float;
+varying vec2 uv;
+uniform sampler2D texture;
+uniform float u_tileX;
+uniform float u_tileY;
+uniform float u_zoom;
+
+void main() {
+    // Convert tile X and zoom into longitude
+    float lon = u_tileX / pow(2.0, u_zoom) * 360.0 - 180.0;
+    
+    // Convert tile Y and zoom into latitude using a custom function to replace sinh
+    float innerValue = 1.0 - 2.0 * u_tileY / pow(2.0, u_zoom);
+    float ex = exp(innerValue);
+    float eNegx = 1.0 / ex;
+    float sinhValue = (ex - eNegx) * 0.5;
+    float latRad = atan(sinhValue);
+    
+    // Calculate deltas for longitude and latitude
+    float deltaLon = 360.0 / pow(2.0, u_zoom) / 256.0;
+    float deltaLat = 2.0 * latRad / 256.0;
+    
+    // Convert UV coordinates into pixel longitude and latitude
+    float pixelLon = lon + uv.x * deltaLon * 256.0;
+    float pixelLat = latRad + uv.y * deltaLat * 256.0;
+    
+    // Output the lat-long as RGB
+    gl_FragColor = vec4(pixelLon/360.0 + 0.5, pixelLat/180.0 + 0.5, 0.0, 1.0);
+}
+
+`;
+
+
+
+
+    // Shader creation function
+    function createShader(gl, sourceCode, type) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, sourceCode);
+        gl.compileShader(shader);
+        return shader;
+    }
+
+    const vertexShader = createShader(gl, vertexShaderSource, gl.VERTEX_SHADER);
+    const fragmentShader = createShader(gl, fragmentShaderSource, gl.FRAGMENT_SHADER);
+
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    gl.useProgram(program);
+
+    const positionAttributeLocation = gl.getAttribLocation(program, "position");
+    const positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        -1, -1,
+        1, -1,
+        -1, 1,
+        1, 1,
+        -1, 1,
+        1, -1
+    ]), gl.STATIC_DRAW);
+
+    // Function to prepare slippy map for rendering
+function prepareSlippyMapForRendering(urlTemplate, x, y, z) {
+    const texture = gl.createTexture();
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    let url = urlTemplate.replace('{x}', x).replace('{y}', y).replace('{z}', z);
+    image.src = url;
+    image.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+        render(x,y,z);
+    };
+}
+
+
+function render(tileX, tileY, zoom) {
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // Set uniforms for shader
+    gl.uniform1f(gl.getUniformLocation(program, "u_tileX"), tileX);
+    gl.uniform1f(gl.getUniformLocation(program, "u_tileY"), tileY);
+    gl.uniform1f(gl.getUniformLocation(program, "u_zoom"), zoom);
+    
+    console.log(tileX)
+    console.log(tileY)
+    console.log(zoom)
+    
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.enableVertexAttribArray(positionAttributeLocation);
+    gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+    // Invoke the function with a slippy map URL template
+    prepareSlippyMapForRendering("https://tile.openstreetmap.org/{z}/{x}/{y}.png", 0, 0, 0);
+</script>
+</body>
+</html>
