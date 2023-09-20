@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WMS to WebGL Shader</title>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const gl = canvas.getContext('webgl');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+
+        // Vertex Shader
+        const vertexShaderSource = `
+            attribute vec2 position;
+            varying vec2 uv;
+            void main() {
+                uv = position * 0.5 + 0.5;
+                gl_Position = vec4(position, 0.0, 1.0);
+            }
+        `;
+
+        // Fragment Shader
+        const fragmentShaderSource = `
+        precision mediump float;
+        varying vec2 uv;
+        uniform sampler2D texture;
+        uniform float u_tileX;
+        uniform float u_tileY;
+        uniform float u_zoom;
+
+         void main() {
+            // Convert tile X and zoom into longitude
+            float lon = u_tileX / pow(2.0, u_zoom) * 360.0 - 180.0;
+        
+            // Convert tile Y and zoom into latitude using a custom function to replace sinh
+            // sinh is not available in all GLSL versions, so we compute it manually
+            float innerValue = 1.0 - 2.0 * u_tileY / pow(2.0, u_zoom);
+            float ex = exp(innerValue);
+            float eNegx = 1.0 / ex;
+            float sinhValue = (ex - eNegx) * 0.5;
+            float latRad = atan(sinhValue);
+            float lat = latRad * 180.0 / 3.14159265359;
+        
+            // Calculate deltas for longitude and latitude
+            float deltaLon = 360.0 / pow(2.0, u_zoom) / 256.0;
+            float deltaLat = 2.0 * latRad / 256.0;
+        
+            // Convert UV coordinates into pixel longitude and latitude
+            float pixelLon = lon + uv.x * deltaLon * 256.0;
+            float pixelLat = lat - uv.y * deltaLat * 256.0;
+        
+            // Convert the longitude and latitude into a 3D position
+            vec3 position = vec3(pixelLon / 180.0, pixelLat / 90.0, 0.0);
+        
+            // Convert the 3D position into a color for visualization
+            vec3 color = position * 0.5 + 0.5;
+        
+            gl_FragColor = vec4(color, 1.0);
+        }
+      `;
+
+        // Shader creation function
+        function createShader_OLD(gl, sourceCode, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, sourceCode);
+            gl.compileShader(shader);
+            return shader;
+        }
+
+        const vertexShader = createShader(gl, vertexShaderSource, gl.VERTEX_SHADER);
+        const fragmentShader = createShader(gl, fragmentShaderSource, gl.FRAGMENT_SHADER);
+
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+        gl.useProgram(program);
+
+        const positionAttributeLocation = gl.getAttribLocation(program, "position");
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            -1, -1,
+            1, -1,
+            -1, 1,
+            1, 1,
+            -1, 1,
+            1, -1
+        ]), gl.STATIC_DRAW);
+
+        // Function to prepare slippy map for rendering
+        function prepareSlippyMapForRendering_OLD(urlTemplate, x, y, z) {
+            const texture = gl.createTexture();
+            const image = new Image();
+            image.crossOrigin = "anonymous";
+            let url = urlTemplate.replace('{x}', x).replace('{y}', y).replace('{z}', z);
+            image.src = url;
+            image.onload = function() {
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+                render(x, y, z);
+            };
+        }
+
+        function render(tileX, tileY, zoom) {
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // Set uniforms for shader
+            gl.uniform1f(gl.getUniformLocation(program, "u_tileX"), tileX);
+            gl.uniform1f(gl.getUniformLocation(program, "u_tileY"), tileY);
+            gl.uniform1f(gl.getUniformLocation(program, "u_zoom"), zoom);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.enableVertexAttribArray(positionAttributeLocation);
+            gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+
+function prepareSlippyMapForRendering(urlTemplate, x, y, z) {
+    const texture = gl.createTexture();
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    let url = urlTemplate.replace('{x}', x).replace('{y}', y).replace('{z}', z);
+    image.src = url;
+    image.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+        // Create a texture to render to
+        const renderTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, renderTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+        // Create a framebuffer and attach the texture to it
+        const framebuffer = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, renderTexture, 0);
+
+        // Activate the framebuffer, render using the fragment shader, then deactivate the framebuffer
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        renderFragmentShader(x, y, z);  // This function uses the fragment shader to render to the texture
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        // Now, use the vertex shader to read the lat-long coordinates from renderTexture and draw them as points
+        renderVertexShader();  // This function will use vertex shader to draw points based on renderTexture
+    };
+}
+
+const latLongFragmentShaderSource = `
+precision mediump float;
+varying vec2 uv;
+uniform sampler2D texture;
+uniform float u_tileX;
+uniform float u_tileY;
+uniform float u_zoom;
+
+void main() {
+
+    // Convert tile X and zoom into longitude
+    float lon = u_tileX / pow(2.0, u_zoom) * 360.0 - 180.0;
+    
+    // Convert tile Y and zoom into latitude
+    float innerValue = 1.0 - 2.0 * u_tileY / pow(2.0, u_zoom);
+    float ex = exp(innerValue);
+    float eNegx = 1.0 / ex;
+    float sinhValue = (ex - eNegx) * 0.5;
+    float latRad = atan(sinhValue);
+    float lat = latRad * 180.0 / 3.14159265359;
+    
+    // Calculate deltas for longitude and latitude
+    float deltaLon = 360.0 / pow(2.0, u_zoom) / 256.0;
+    float deltaLat = 2.0 * latRad / 256.0;
+    
+    // Convert UV coordinates into pixel longitude and latitude
+    float pixelLon = lon + uv.x * deltaLon * 256.0;
+    float pixelLat = lat - uv.y * deltaLat * 256.0;
+    
+    // Encode pixelLon and pixelLat into RGB values
+    vec3 color = vec3(pixelLon / 360.0 + 0.5, pixelLat / 180.0 + 0.5, 1.0);
+    
+    gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+const globeVertexShaderSource = `
+attribute vec2 position;
+varying vec2 uv;
+void main() {
+    uv = position * 0.5 + 0.5;
+    gl_Position = vec4(position, 0.0, 1.0);
+}
+`;
+
+const visualizationFragmentShaderSource = `
+precision mediump float;
+varying vec2 uv;
+uniform sampler2D texture; // This will sample from the texture created by renderFragmentShader
+
+void main() {
+    vec4 colorFromTexture = texture2D(texture, uv);
+    gl_FragColor = colorFromTexture; // or any other manipulation you want
+}
+`;
+
+function renderFragmentShader(tileX, tileY, zoom) {
+    const latLongFragmentShader = createShader(gl, latLongFragmentShaderSource, gl.FRAGMENT_SHADER);
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, latLongFragmentShader);
+    gl.linkProgram(program);
+    gl.useProgram(program);
+
+    gl.uniform1f(gl.getUniformLocation(program, "u_tileX"), tileX);
+    gl.uniform1f(gl.getUniformLocation(program, "u_tileY"), tileY);
+    gl.uniform1f(gl.getUniformLocation(program, "u_zoom"), zoom);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+function renderVertexShader() {
+    const globeVertexShader = createShader(gl, globeVertexShaderSource, gl.VERTEX_SHADER);
+    const visualizationFragmentShader = createShader(gl, visualizationFragmentShaderSource, gl.FRAGMENT_SHADER);
+
+    const program = gl.createProgram();
+    gl.attachShader(program, globeVertexShader);
+    gl.attachShader(program, visualizationFragmentShader);
+    gl.linkProgram(program);
+    gl.useProgram(program);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+const error = gl.getError();
+if (error !== gl.NO_ERROR) {
+    console.error("WebGL Error: ", error);
+}
+
+function createShader(gl, sourceCode, type) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, sourceCode);
+    gl.compileShader(shader);
+
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('Shader compilation failed: ', gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+    }
+
+    return shader;
+}
+
+if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error("Program linking failed: ", gl.getProgramInfoLog(program));
+}
+
+        // Invoke the function with a slippy map URL template
+        prepareSlippyMapForRendering("https://tile.openstreetmap.org/{z}/{x}/{y}.png", 0, 0, 0);
+    </script>
+</body>
+
+</html>
