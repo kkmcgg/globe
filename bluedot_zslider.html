@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Three.js Globe</title>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.135.0/build/three.min.js"></script>
+</head>
+<body>
+
+  <label for="heightSlider">Height: </label>
+  <input type="range" id="heightSlider" min="0" max="10000000" step="1">
+  <span id="heightValue">0</span> meters
+
+  <script>
+    // Initialize scene and camera
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+    // Initialize renderer
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Add a sphere (the Earth)
+    const geometry = new THREE.SphereGeometry(1, 32, 32);
+    const material = new THREE.MeshBasicMaterial({ color: 0x0000FF });
+    const sphere = new THREE.Mesh(geometry, material);
+    scene.add(sphere);
+
+    // Start with a camera position where the sphere is visible
+    camera.position.z = 5;
+
+    // Render loop
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Function to update camera position based on the input string
+    function updateView(height) {
+      const radius = 1 + height / 6371000;  // Earth's radius is approximately 6,371,000 meters
+      camera.position.z = radius * 5;  // Adjust this value based on your specific needs
+    }
+
+    // Initial view update
+    updateView(0);
+
+    // Update height based on the slider
+    const heightSlider = document.getElementById("heightSlider");
+    const heightValue = document.getElementById("heightValue");
+
+    heightSlider.addEventListener("input", function() {
+      const height = parseInt(heightSlider.value, 10);
+      heightValue.textContent = height;
+      updateView(height);
+    });
+  </script>
+</body>
+</html>
