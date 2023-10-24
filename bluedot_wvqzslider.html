@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Three.js Globe</title>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.135.0/build/three.min.js"></script>
+</head>
+<body>
+
+  <label for="heightSlider">Height: </label>
+  <input type="range" id="heightSlider" min="0" max="10000000" step="1">
+  <span id="heightValue">0</span> meters
+  <br>
+
+  <label for="fovSlider">Field of View: </label>
+  <input type="range" id="fovSlider" min="1" max="179" step="1">
+  <span id="fovValue">75</span> degrees
+  <br>
+
+  <label for="declinationSlider">Declination: </label>
+  <input type="range" id="declinationSlider" min="-90" max="90" step="1">
+  <span id="declinationValue">0</span> degrees
+  <br>
+
+  <label for="azimuthSlider">Azimuth: </label>
+  <input type="range" id="azimuthSlider" min="0" max="360" step="1">
+  <span id="azimuthValue">0</span> degrees
+
+  <script>
+    // Initialize scene and camera
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+    // Initialize renderer
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Add a sphere (the Earth)
+    const geometry = new THREE.SphereGeometry(1, 32, 32);
+    const material = new THREE.MeshBasicMaterial({ color: 0x0000FF });
+    const sphere = new THREE.Mesh(geometry, material);
+    scene.add(sphere);
+
+    // Start with a camera position where the sphere is visible
+    camera.position.z = 5;
+
+    // Render loop
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Function to update camera parameters based on the input
+    function updateView(height, fov, declination, azimuth) {
+      const radius = 1 + height / 6371000;
+      camera.position.z = radius * 5;
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+
+      // Update azimuth and declination
+      camera.rotation.y = THREE.MathUtils.degToRad(azimuth);
+      camera.rotation.x = THREE.MathUtils.degToRad(declination);
+    }
+
+    // Initial view update
+    updateView(0, 75, 0, 0);
+
+    // Update parameters based on the sliders
+    const heightSlider = document.getElementById("heightSlider");
+    const heightValue = document.getElementById("heightValue");
+    const fovSlider = document.getElementById("fovSlider");
+    const fovValue = document.getElementById("fovValue");
+    const declinationSlider = document.getElementById("declinationSlider");
+    const declinationValue = document.getElementById("declinationValue");
+    const azimuthSlider = document.getElementById("azimuthSlider");
+    const azimuthValue = document.getElementById("azimuthValue");
+
+    heightSlider.addEventListener("input", function() {
+      const height = parseInt(heightSlider.value, 10);
+      heightValue.textContent = height;
+      updateView(height, camera.fov, camera.rotation.x, camera.rotation.y);
+    });
+
+    fovSlider.addEventListener("input", function() {
+      const fov = parseInt(fovSlider.value, 10);
+      fovValue.textContent = fov;
+      updateView(camera.position.z, fov, camera.rotation.x, camera.rotation.y);
+    });
+
+    declinationSlider.addEventListener("input", function() {
+      const declination = parseInt(declinationSlider.value, 10);
+      declinationValue.textContent = declination;
+      updateView(camera.position.z, camera.fov, declination, camera.rotation.y);
+    });
+
+    azimuthSlider.addEventListener("input", function() {
+      const azimuth = parseInt(azimuthSlider.value, 10);
+      azimuthValue.textContent = azimuth;
+      updateView(camera.position.z, camera.fov, camera.rotation.x, azimuth);
+    });
+  </script>
+</body>
+</html>
