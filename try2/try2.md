@@ -18,3 +18,24 @@ could be made more simple...
  - let zoomfactor vary to the power of camera position z /5
  - fixed the camera zoom to 1.1 (from 1.0) to avoid clipping
  - added panFactor to set panning speed by camera position z
+
+ # 24
+ - adds height to the selection point
+ - changed the point to a circle
+ - added fog
+ - allows closer zoom (1 to 30)
+
+ # next
+- fix point click behaviour 
+    - should not draw after dragging 
+- draw point size relative to screen
+- smoother navigation
+
+# eventually    
+- more 3d controls
+- keyboard commands
+    -ie, switch wms, add more points
+- earth coords (wgs, itrf)
+- graticules (nad, slippy, utm)
+- wms blending
+
