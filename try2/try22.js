@@ -111,7 +111,12 @@ document.addEventListener('wheel', e => {
   const zoomFactor = Math.sign(e.deltaY) > 0 ? 1.1 : 0.9;
 
   // Adjust the camera position and update the zoom level
-  camera.position.z *= zoomFactor;
+  let zoomto = camera.position.z;
+  zoomto *= zoomFactor;
+  if (zoomto >=1 && zoomto <= 10) {
+    camera.position.z = zoomto;
+  }
+  // camera.position.z *= zoomFactor;
   camera.updateProjectionMatrix();
   coordDiv.innerHTML = `Z:${camera.position.z.toFixed(2)}` + coordDiv.innerHTML.substr(coordDiv.innerHTML.indexOf('<br>'));
 });

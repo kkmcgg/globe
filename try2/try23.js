@@ -92,10 +92,17 @@ document.addEventListener('mousemove', e => {
       x: e.clientX - previousMousePosition.x,
       y: e.clientY - previousMousePosition.y
     };
-    sphere.rotation.y += deltaMove.x * 0.005;
-    sphere.rotation.x += deltaMove.y * 0.005;
-    points.rotation.y += deltaMove.x * 0.005;
-    points.rotation.x += deltaMove.y * 0.005;
+
+    // const panFactor = 0.005; 
+    // let panFactor = camera.position.z / 1000
+    let panFactor  = Math.sqrt(camera.position.z-1)/1000;
+
+
+
+    sphere.rotation.y += deltaMove.x * panFactor;
+    sphere.rotation.x += deltaMove.y * panFactor;
+    points.rotation.y += deltaMove.x * panFactor;
+    points.rotation.x += deltaMove.y * panFactor;
     previousMousePosition = { x: e.clientX, y: e.clientY };
   }
 });
@@ -108,10 +115,21 @@ function animate() {
 // Event listener for mouse wheel or touchpad scroll
 document.addEventListener('wheel', e => {
   // Calculate the zoom factor based on the scroll delta
-  const zoomFactor = Math.sign(e.deltaY) > 0 ? 1.1 : 0.9;
+  let zoomFactor = Math.sign(e.deltaY) > 0 ? 1.1 : 0.9;
+
+  // smooth zoom factor by camera position z
+  zoomFactor = Math.pow(zoomFactor, camera.position.z/5);
+
+  //log camera position
+  console.log(`Z:${camera.position.z.toFixed(2)}, zoomFactor:${zoomFactor}`);
 
   // Adjust the camera position and update the zoom level
-  camera.position.z *= zoomFactor;
+  let zoomto = camera.position.z;
+  zoomto *= zoomFactor;
+  if (zoomto >=1.1 && zoomto <= 10) {
+    camera.position.z = zoomto;
+  }
+  // camera.position.z *= zoomFactor;
   camera.updateProjectionMatrix();
   coordDiv.innerHTML = `Z:${camera.position.z.toFixed(2)}` + coordDiv.innerHTML.substr(coordDiv.innerHTML.indexOf('<br>'));
 });
