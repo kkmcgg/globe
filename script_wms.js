@@ -16,10 +16,10 @@ renderer.domElement.style.height = `${window.innerHeight}px`;
 document.getElementById('container').appendChild(renderer.domElement);
 
 // Load the WMS texture and create a sphere
-const wmsUrl = "https://basemap.nationalmap.gov/arcgis/services/USGSImageryOnly/MapServer/WMSServer?request=GetMap&service=WMS&version=1.1.1&layers=0&styles=&format=image/jpeg&srs=EPSG:4326&bbox=-180,-90,180,90&width=1024&height=512"; 
+// const wmsUrl = "https://basemap.nationalmap.gov/arcgis/services/USGSImageryOnly/MapServer/WMSServer?request=GetMap&service=WMS&version=1.1.1&layers=0&styles=&format=image/jpeg&srs=EPSG:4326&bbox=-180,-90,180,90&width=1024&height=512"; 
 
 
-//const wmsUrl = "https://sedac.ciesin.columbia.edu/geoserver/wms?request=GetMap&service=WMS&version=1.1.1&layers=gpw-v3:gpw-v3-population-density_2000&styles=&format=image/jpeg&srs=EPSG:4326&bbox=-180,-90,180,90&width=1024&height=512";
+const wmsUrl = "https://sedac.ciesin.columbia.edu/geoserver/wms?request=GetMap&service=WMS&version=1.1.1&layers=gpw-v3:gpw-v3-population-density_2000&styles=&format=image/jpeg&srs=EPSG:4326&bbox=-180,-90,180,90&width=1024&height=512";
 
 
 const textureLoader = new THREE.TextureLoader();
