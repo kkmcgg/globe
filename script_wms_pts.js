@@ -3,7 +3,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.000001, 1000);
 
 // Factor by which to increase the canvas size
-const scaleFactor = 2;
+const scaleFactor = 4;
 
 // Create the renderer at a higher resolution
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -17,16 +17,61 @@ document.getElementById('container').appendChild(renderer.domElement);
 // Load the WMS texture
 const wmsUrl = "https://basemap.nationalmap.gov/arcgis/services/USGSImageryOnly/MapServer/WMSServer?request=GetMap&service=WMS&version=1.1.1&layers=0&styles=&format=image/jpeg&srs=EPSG:4326&bbox=-180,-90,180,90&width=1024&height=512";
 
+// const ptmode = 0; // vertex
+const ptmode = 1; // random
+
 const textureLoader = new THREE.TextureLoader();
 let sphereLODs = []; // Array to store different LODs
 let pointSphere; // Declare pointSphere here
-const lodDistances = [10, 5, 2]; // Distances at which to switch LODs
-const lodSegments = [16, 32, 64]; // Different segment values for each LOD
+const lodDistances = [1, 1, 1]; // Distances at which to switch LODs
+const lodSegments = [120, 32, 64]; // Different segment values for each LOD
+
 
 textureLoader.load(wmsUrl, function (texture) {
     // Create different LODs for the sphere
     for (let i = 0; i < lodSegments.length; i++) {
-        const pointsGeometry = new THREE.SphereGeometry(1, lodSegments[i], lodSegments[i]);
+        let pointsGeometry;
+
+        switch (ptmode){
+            case 0: {
+                console.log('ptmode 0')
+                pointsGeometry = new THREE.SphereGeometry(1, lodSegments[i], lodSegments[i]);
+                break;
+                }
+            case 1:{
+                console.log('ptmode 1')
+                const positions = [];
+                const uvs = [];
+                const numPoints = lodSegments[i]*1000;
+
+                for (let j = 0; j < numPoints; j++) {
+                    const u = Math.random();
+                    const v = Math.random();
+
+                    const theta = u * 2.0 * Math.PI;  // longitude
+                    const phi = Math.acos(2.0 * v - 1.0);  // latitude
+
+                    const x = Math.sin(phi) * Math.cos(theta);
+                    const z = Math.sin(phi) * Math.sin(theta);
+                    const y = Math.cos(phi);
+
+                    // Correct sphere UV mapping:
+                    // const sphereU = theta / (2.0 * Math.PI);
+                    const sphereU = (theta / (2.0 * Math.PI) + 0.5) % 1.0;    // spin
+                    const sphereV = phi / Math.PI;
+
+                    positions.push(x, y, z);
+                    uvs.push(1.0-sphereU, 1.0- sphereV); // Flip V to match texture orientation
+                    // uvs.push(u, v); // Flip V to match texture orientation
+                
+                }
+
+                pointsGeometry = new THREE.BufferGeometry();
+                pointsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                pointsGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+                }
+                break;
+            }
 
         // Create shader material
         const pointMaterial = new THREE.ShaderMaterial({
@@ -36,8 +81,8 @@ textureLoader.load(wmsUrl, function (texture) {
                 cameraDistance: { value: 0.0 }, // Initialize cameraDistance uniform
             },
             transparent: true, // Enable transparency in the material
-            depthTest: true,    // Enable depth testing
-            depthWrite: true,   // Enable depth writing
+            depthTest: false,    // Enable depth testing
+            depthWrite: false,   // Enable depth writing
             blending: THREE.NormalBlending, // Use normal blending
                vertexShader: `
         uniform sampler2D map;
@@ -50,7 +95,8 @@ textureLoader.load(wmsUrl, function (texture) {
             float dist = distance(cameraPosition, position); // Use built-in cameraPosition
 
             // Adjust point size based on distance (inversely proportional)
-            gl_PointSize = 100.0 / dist; // Adjust the constants as needed
+            gl_PointSize = 500.0 / (dist*dist*dist); // Adjust the constants as needed
+            // gl_PointSize = 100.0; // Adjust the constants as needed
         }
     `,
             fragmentShader: `
@@ -59,15 +105,29 @@ textureLoader.load(wmsUrl, function (texture) {
                 uniform float cameraDistance; // Add uniform for camera distance
 
                 void main() {
+
+                        vec2 coord = gl_PointCoord - vec2(0.5); // center at (0,0)
+                        float radius = 0.5; // radius for a circle
+                        // if(length(coord) > radius){
+                        //     discard; // discard fragments outside circle radius
+                        // }
+
+                    float dist = length(coord);
+                    // Opaque center, transparent edges (smooth fade-out)
+                    float alpha = .1 - smoothstep(0.1, 0.5, dist);
+                    // float alpha = 1.0;
+
                     vec4 color = texture2D(map, vUv);
+                    // vec4 color = texture2D(map, gl_PointCoord);
+                    color.b = min(color.b + 0.0, 1.0); // increase blue by 0.2, capped at 1.0
 
                     // Calculate transparency based on camera distance
-                    float transparency = clamp(cameraDistance / 10.0, 0.0, 1.0); // Adjust the divisor (10.0) as needed
+                    float transparency = clamp(cameraDistance / 100.0, 0.0, 1.0); // Adjust the divisor (10.0) as needed
 
 										//float hardval = 0.01;
 
                     // Apply transparency to the color
-                    gl_FragColor = vec4(color.rgb, transparency);
+                    gl_FragColor = vec4(color.rgb, alpha);
                 }
             `,
         });
@@ -109,6 +169,9 @@ textureLoader.load(wmsUrl, function (texture) {
     coordDiv.style.left = '10px';
     coordDiv.style.color = 'white';
     document.body.appendChild(coordDiv);
+
+
+    coordDiv.innerHTML = `point mode: ${ptmode}`;
 
     // Initialize a raycaster and a vector to hold the mouse position
     const raycaster = new THREE.Raycaster();
