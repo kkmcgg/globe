@@ -1,6 +1,6 @@
 // Initialize the scene, camera, and renderer
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.000001, 1000);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.000001, 2000.0);
 
 // Factor by which to increase the canvas size
 const scaleFactor = 4;
@@ -8,6 +8,11 @@ const scaleFactor = 4;
 // Create the renderer at a higher resolution
 const renderer = new THREE.WebGLRenderer({ antialias: false });
 renderer.setSize(window.innerWidth * scaleFactor, window.innerHeight * scaleFactor);
+
+//for material clipping plane
+// renderer.localClippingEnabled = true;
+// const clippingPlane = new THREE.Plane(new THREE.Vector3(0, 0, .2), 0);
+// renderer.clippingPlanes = [clippingPlane]
 
 // Scale down the canvas element to fit the display size
 renderer.domElement.style.width = `${window.innerWidth}px`;
@@ -79,7 +84,10 @@ textureLoader.load(wmsUrl, function (texture) {
                 map: { value: texture },
                 cameraPosition: { value: camera.position }, // Pass camera position to shader
                 cameraDistance: { value: 0.0 }, // Initialize cameraDistance uniform
+                mode : {value:1}
             },
+            // clipping: true, // Enable clipping on material
+            // clippingPlanes: [clippingPlane],
             transparent: true, // Enable transparency in the material
             depthTest: false,    // Enable depth testing
             depthWrite: false,   // Enable depth writing
@@ -87,22 +95,36 @@ textureLoader.load(wmsUrl, function (texture) {
                vertexShader: `
         uniform sampler2D map;
         varying vec2 vUv;
+
+        varying vec3 vPos;
+
+        varying vec3 vWorldPosition;
+
         void main() {
             vUv = uv;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+
+            vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPosition.xyz;
 
             // Calculate distance to camera using built-in cameraPosition
             float dist = distance(cameraPosition, position); // Use built-in cameraPosition
 
             // Adjust point size based on distance (inversely proportional)
             gl_PointSize = 500.0 / (dist*dist*dist); // Adjust the constants as needed
-            // gl_PointSize = 100.0; // Adjust the constants as needed
+            // gl_PointSize = 50.0; // Adjust the constants as needed
+
+            vPos = position; // pass the full position
         }
     `,
             fragmentShader: `
+                uniform int mode;
                 uniform sampler2D map;
                 varying vec2 vUv;
+                varying vec3 vPos;
                 uniform float cameraDistance; // Add uniform for camera distance
+                // uniform vec3 cameraPosition;
+                varying vec3 vWorldPosition;
 
                 void main() {
 
@@ -114,12 +136,35 @@ textureLoader.load(wmsUrl, function (texture) {
 
                     float dist = length(coord);
                     // Opaque center, transparent edges (smooth fade-out)
-                    float alpha = .1 - smoothstep(0.1, 0.5, dist);
+                    float alpha = .1 - smoothstep(0.1, 1.0, dist);
                     // float alpha = 1.0;
 
                     vec4 color = texture2D(map, vUv);
                     // vec4 color = texture2D(map, gl_PointCoord);
                     color.b = min(color.b + 0.0, 1.0); // increase blue by 0.2, capped at 1.0
+
+                    switch(mode){ 
+                        case 0:
+                            color.r = (vPos.x + color.r+color.g+color.b) * 0.5; // remap from [-1,1] to [0,1]
+                            color.g = (vPos.y + color.r+color.g+color.b) * 0.5; // remap from [-1,1] to [0,1]
+                            color.b = (vPos.z + color.r+color.g+color.b) * 0.5; // remap from [-1,1] to [0,1]
+                            break;
+                        case 1:
+                            vec3 viewDir = normalize(vWorldPosition - cameraPosition);
+                            // Globe centered at origin, camera looking toward globe center
+                            // if(dot(viewDir, normalize(cameraPosition)) > 0.0){
+                            //     discard; // Discards pixels on back half of globe
+                            // }
+                            if (vWorldPosition.z < 0.7){
+                                discard;
+                            }
+                            // color.r = (vWorldPosition.x) * 0.5; // remap from [-1,1] to [0,1]
+                            // color.g = (vWorldPosition.y) * 0.5; // remap from [-1,1] to [0,1]
+                            // color.b = (vWorldPosition.z) * 0.5; // remap from [-1,1] to [0,1]
+                            break;
+                        }
+
+
 
                     // Calculate transparency based on camera distance
                     float transparency = clamp(cameraDistance / 100.0, 0.0, 1.0); // Adjust the divisor (10.0) as needed
@@ -253,9 +298,21 @@ textureLoader.load(wmsUrl, function (texture) {
         }
     });
 
+    // Event listener for 'x' key press
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'z') {
+            const uniforms = sphereLODs[0].material.uniforms;
+            uniforms.mode.value = 1 - uniforms.mode.value;
+            uniforms.mode.needsUpdate = true; // Optional but recommended
+            console.log(`Shader mode now: ${uniforms.mode.value}`);
+        }
+    });
+
     // Animation loop
     function animate() {
         requestAnimationFrame(animate);
+        // clippingPlane.normal.copy(camera.position).normalize();
+        // clippingPlane.constant = 0; // assuming globe at origin; adjust if globe moved
 
         // Update LOD based on camera distance
         const cameraDistance = camera.position.z - 1; // Distance from the surface of the sphere
